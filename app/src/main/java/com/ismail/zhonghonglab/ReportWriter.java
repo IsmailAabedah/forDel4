@@ -31,12 +31,32 @@ public final class ReportWriter {
         text.append("- ABI: ").append(Build.SUPPORTED_ABIS == null ? "unknown" : Build.SUPPORTED_ABIS[0]).append("\n\n");
         text.append("## Automatic checks\n\n");
         for (CheckResult c : checks) text.append(c.toReportLine()).append("\n");
+        text.append("\n## CAN snapshot (latest available values)\n\n");
+        CanServiceClient.Snapshot can = CanServiceClient.get(context).getLatest();
+        if (can == null) {
+            text.append("No CAN snapshot was available when this report was generated.\n");
+        } else {
+            text.append("- Snapshot timestamp: ").append(new Date(can.timestamp)).append("\n\n");
+            text.append("### Decoded signals\n\n");
+            for (java.util.Map.Entry<String, Long> entry : can.values.entrySet()) {
+                text.append("- ").append(entry.getKey()).append(" = ").append(entry.getValue()).append("\n");
+            }
+            text.append("\n### Raw CAN frames\n\n");
+            int[] ids = {564, 577, 695, 722, 800, 963, 1042, 1043, 1218, 1219};
+            for (int id : ids) {
+                byte[] frame = can.frame(id);
+                if (frame != null) text.append("- ").append(id).append(": ")
+                        .append(CanServiceClient.hex(frame)).append("\n");
+            }
+        }
         text.append("\n## Captured events\n\n");
         for (EventJournal.Entry e : EventJournal.snapshot()) text.append("- ").append(e.format()).append("\n");
         text.append("\n## Interpretation rules\n\n");
         text.append("- A service Binder connection proves reachability, not the correctness of every method.\n");
         text.append("- A physical button is confirmed only when a matching callback or media-state transition is recorded.\n");
-        text.append("- CAN signal values remain provisional until decoded with the verified CarCheck signal definitions.\n");
+        text.append("- CAN data is decoded with the 159-signal catalogue extracted from the working CarCheck application; semantics still depend on the per-signal verification status.\n");
+        text.append("- Raw SRS/airbag bytes are informational only; no fault diagnosis is inferred and no SRS command was sent.\n");
+        text.append("- Window-switch bits indicate switch/input activity unless a separate position sensor is independently proven.\n");
         text.append("- No CAN writes, UART access, or SRS commands were issued by this report.\n");
 
         FileOutputStream stream = new FileOutputStream(report);

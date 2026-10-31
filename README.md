@@ -1,33 +1,26 @@
 # ZhongHong Integration Lab
 
-A standalone Android diagnostic and validation application for the ZhongHong / NEXELL head unit used in the Saipa Quick.
+A standalone Android 7.1.2/API-25 diagnostic app for the ZhongHong / NEXELL head unit used in the Saipa Quick.
 
-## Device compatibility target
+## Capabilities
+- Automatically probes vendor services, CAN, Logic, SystemState, read-only MCU data, providers, permissions, USB storage, and video-decoder inventory.
+- Decodes the 159 CAN signal definitions extracted from the working CarCheck application.
+- Prioritizes USB Music and Bluetooth media, including guided steering-wheel next/previous/play-pause checks.
+- Includes a guided stationary Sport/manual-CVT test for P, selector mode, +, and −.
+- Guides switch tests for lights, indicators, wipers, washers, window-switch inputs, and rear defrost.
+- Exports Markdown reports with decoded CAN values, raw frame bytes, and event history.
 
-- Android 7.1.2 / API 25
-- 32-bit ARM (armeabi-v7a / armeabi)
-- Landscape display: 952 × 600 (about 634 × 400 dp)
-- Legacy target SDK 22 for API-25 compatibility
-- No HOME launcher intent, root access, native libraries, or direct UART access
+## Compatibility
+- Android 7.1.2 / API 25; 32-bit ARM; landscape 952 × 600.
+- targetSdkVersion 22; separate package com.ismail.zhonghonglab.debug.
+- No HOME intent, root, native libraries, or direct UART access.
 
-## Primary goals
+## APK
+GitHub Actions: https://github.com/IsmailAabedah/forDel4/actions
+Download the artifact named zhonghong-integration-lab-debug from the latest successful Android build. The APK is inside the ZIP at app/build/outputs/apk/debug/app-debug.apk.
 
-1. Validate steering-wheel media controls while USB Music and Bluetooth A2DP are active.
-2. Validate USB Music binder reads and transport commands.
-3. Validate Logic audio-source/media-key callbacks and Bluetooth media metadata/control paths.
-4. Confirm automatic CVT/manual Sport mode gear values (P/R/N/D and manual +/-) without issuing vehicle-control writes.
-5. Automatically inspect CAN, Logic, MCU, phone-provider, codec, storage, and service availability.
-6. Guide only the unresolved physical checks with explicit, guarded, one-action-at-a-time instructions.
-7. Generate a concise, timestamped evidence report.
+## References
+- reference/CarCheck-v1.1.apk — the previously working app.
+- reference/CarCheck-jadx-sources.zip — extracted source used to reproduce service bindings and CAN signal map.
 
-## Safety model
-
-The app is read-first. It does not open factory UART devices, write CAN frames, issue SRS/airbag commands, or obscure/replace the reverse-camera path. Any future reversible MCU experiment must have a separately reviewed allowlist, a saved original value, a visible restore step, and a stationary-vehicle guard.
-
-## Build
-
-GitHub Actions builds the debug APK and publishes it as a workflow artifact. See .github/workflows/android.yml.
-
-## Reference compatibility files
-
-The reference/ directory contains the user's previously working CarCheck-v1.1 APK and its extracted source archive. They are compatibility references only; the new app is a separate package and does not replace the factory launcher.
+Cloud compilation is not real-device testing. See docs/IMPLEMENTATION_STATUS.md for remaining validation. SRS data is informational only; no CAN/MCU writes are issued. The reverse-camera path remains under factory control.

@@ -148,6 +148,13 @@ public final class MainActivity extends Activity {
                 .setOnClickListener(v -> openGuided("SPORT"));
         content.addView(guided, margin(0, 0, 0, 10));
 
+        LinearLayout signals = card();
+        signals.addView(section("الإشارات التي تحتاج حركة فعلية"));
+        Button signalTest = button("⑤  اختبار الإضاءة والمسّاحات والنوافذ والتسخين", "#72552C");
+        signalTest.setOnClickListener(v -> startActivity(new Intent(this, CanSignalWizardActivity.class)));
+        signals.addView(signalTest);
+        content.addView(signals, margin(0, 0, 0, 10));
+
         LinearLayout report = card();
         report.addView(section("التقرير"));
         Button export = button("حفظ تقرير الفحص والسجل", "#34485D");

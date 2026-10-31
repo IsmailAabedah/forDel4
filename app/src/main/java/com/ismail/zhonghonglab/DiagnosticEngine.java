@@ -126,6 +126,57 @@ public final class DiagnosticEngine {
             out.add(CheckResult.info("settings.write", "تعديل إعدادات النظام", t.toString()));
         }
 
+        CanServiceClient.Snapshot live = CanServiceClient.get(context).getLatest();
+        if (live != null) {
+            Long gear = live.get("Shifter_Lever_Signals", 1218);
+            Long speed = live.get("Vehicle_Speed", 1218);
+            Long ratio = live.get("Overal_Ratio", 1218);
+            out.add(CheckResult.info("can.gear", "الغيار / Sport",
+                    "raw=" + gear + ", speed=" + speed + " km/h, ratio(raw)=" + ratio
+                            + "; 9=P, 10=R, 11=N, 12=D; manual state must be physically confirmed"));
+            String[] tyreNames = {"FL", "FR", "RL", "RR"};
+            String[] rawNames = {"FLTyrePressureValue", "FRTyrePressureValue", "RLTyrePressureValue", "RRTyrePressureValue"};
+            StringBuilder tpms = new StringBuilder();
+            boolean anyPressure = false;
+            for (int i=0;i<rawNames.length;i++) {
+                Long raw = live.get(rawNames[i], 1042);
+                if (raw == null) continue;
+                if (tpms.length()>0) tpms.append(" | ");
+                double bar = Math.ceil(raw * 1.378 + 100.0) / 100.0;
+                tpms.append(tyreNames[i]).append("=").append(String.format(java.util.Locale.US,"%.2f bar",bar));
+                anyPressure = true;
+            }
+            out.add(anyPressure
+                    ? CheckResult.pass("can.tpms", "قراءات ضغط الإطارات", tpms.toString())
+                    : CheckResult.info("can.tpms", "قراءات ضغط الإطارات", "لا توجد قراءات حية من وحدة TPMS حالياً"));
+
+            Long ambient = live.get("AmbientTemp", 695);
+            out.add(ambient == null || ambient >= 254
+                    ? CheckResult.info("can.ambient", "الحرارة الخارجية", "لا توجد قراءة صالحة حالياً")
+                    : CheckResult.pass("can.ambient", "الحرارة الخارجية",
+                        String.format(java.util.Locale.US,"%.1f °C (raw=%d)", ambient * 0.5 - 40.0, ambient)));
+
+            Long winter = live.get("Winter_Mode_Status", 1218);
+            out.add(winter == null
+                    ? CheckResult.info("can.winter", "وضع الشتاء", "الإشارة غير متاحة بعد")
+                    : CheckResult.info("can.winter", "وضع الشتاء",
+                        "raw=" + winter + "; verify only if the vehicle exposes a winter-mode toggle"));
+
+            Long windowL = live.get("LH_Window_Switch_Status", 564);
+            Long windowR = live.get("RH_Window_Switch_Status", 564);
+            out.add(CheckResult.info("can.windows", "إشارات أزرار النوافذ",
+                    "LH=" + windowL + ", RH=" + windowR
+                            + "; switch-input values, not measured glass position"));
+
+            Long srs = live.get("Error_flag_of_the_airbag_ECU", 722);
+            Long passengerAirbag = live.get("Passenger_airbag_cut_off_status", 722);
+            out.add(CheckResult.info("can.srs.raw", "مراقبة SRS الخام",
+                    "Error_flag=" + srs + ", Passenger_airbag_cut_off=" + passengerAirbag
+                            + "; raw information only, not an airbag fault diagnosis"));
+        } else {
+            out.add(CheckResult.info("can.live.values", "بيانات CAN", "انتظر أول قراءة CAN ثم أعد الفحص الذاتي"));
+        }
+
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         if (adapter == null) out.add(CheckResult.unavailable("bt.adapter", "Bluetooth", "لا يوجد محول Bluetooth"));
         else out.add(CheckResult.info("bt.adapter", "Bluetooth",

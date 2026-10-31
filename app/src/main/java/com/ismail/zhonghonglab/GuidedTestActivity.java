@@ -149,7 +149,7 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
    step++;render();return;
   }
   if(step==1){
-   boolean sent=logic.selectSource(3);changedSource=sent||!previousSource.equals("3");
+   boolean sent=logic.selectSource(3);changedSource=sent||!"3".equals(previousSource);
    h.postDelayed(()->{MediaSessionMonitor.Snapshot s=MediaSessionMonitor.chooseBest(this);
     step++;render();
     show(s==null?"طُلب مصدر Bluetooth="+sent+" لكن لا توجد MediaSession منشورة. نتابع اختبار أزرار Logic ونثبت غياب البيانات بشكل مستقل."
@@ -184,13 +184,23 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
    render();show("نجح الاختبار: زر المقود الصحيح وصل إلى Logic واستجابت الوسائط.");return;
   }
   if(keyFound!=null&&System.currentTimeMillis()>mediaStart+3500){
-   mediaCapture=false;primary.setEnabled(true);EventJournal.record("GUIDED_WHEEL","PARTIAL",action+" key only");
-   show("تم إثبات وصول الزر الصحيح إلى Logic، لكن المشغل لم يعرض تغيراً. هذا يثبت التقاط الزر ولا يثبت تنفيذ أمر الموسيقى؛ تحقق من وجود مسارين أو تشغيل جلسة Bluetooth.");
+   mediaCapture=false;primary.setEnabled(true);
+   EventJournal.record("GUIDED_WHEEL","PARTIAL",action+" correct Logic key but no player state change");
+   step++;
+   render();
+   show("تم إثبات وصول الزر الصحيح إلى Logic، لكن المشغل لم يعرض تغيراً. سجّلنا هذا نجاحاً جزئياً لا كاملاً، ويمكنك متابعة اختبار الزر التالي دون إعادة الخطوة.");
    return;
   }
   if(System.currentTimeMillis()>=mediaDeadline){
-   mediaCapture=false;primary.setEnabled(true);EventJournal.record("GUIDED_WHEEL","INCONCLUSIVE",action);
-   show("لم نرصد استجابة مؤكدة خلال 10 ثوانٍ. لا نعتبرها فشلاً ولا نفترض أنك ضغطت الزر الصحيح. أعد المحاولة مرة واحدة.");
+   mediaCapture=false;primary.setEnabled(true);
+   if(mediaChanged){
+    EventJournal.record("GUIDED_WHEEL","PARTIAL",action+" player changed but Logic key callback missing");
+    step++;render();
+    show("تغيرت حالة الوسائط، لكن لم يصل حدث زر Logic المتوقع. هذه نتيجة جزئية؛ تابع لاختبار الزر التالي.");
+   }else{
+    EventJournal.record("GUIDED_WHEEL","INCONCLUSIVE",action);
+    show("لم نرصد استجابة مؤكدة خلال 10 ثوانٍ. لا نعتبرها فشلاً ولا نفترض أنك ضغطت الزر الصحيح. أعد المحاولة مرة واحدة.");
+   }
   }
  }
 
