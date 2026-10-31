@@ -71,7 +71,13 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
   guide=label("",15,"#E8F0F8",false);card.addView(guide);root.addView(card,lp(0,0,0,10));
   status=label("",12,"#91A4B8",false);root.addView(status,lp(0,0,0,10));
   primary=button("ابدأ","#1D947A");primary.setOnClickListener(v->nextAction());root.addView(primary,lp(0,0,0,8));
-  again=button("إعادة المحاولة","#34485D");again.setOnClickListener(v->retry());root.addView(again,lp(0,0,0,8));
+  again=button("إعادة المحاولة","#34485D");
+  again.setOnClickListener(v->{
+   if(type.equals("BLUETOOTH")&&step==0&&!MediaSessionMonitor.hasListenerAccess(this)){
+    step++;render();show("تابعنا دون إذن بيانات الوسائط. سنختبر استقبال زر المقود، لكن قد لا نستطيع قراءة اسم الأغنية من النظام.");
+   }else retry();
+  });
+  root.addView(again,lp(0,0,0,8));
   Button exit=button("إنهاء الاختبار واستعادة مصدر الصوت السابق","#26384B");exit.setOnClickListener(v->finish());root.addView(exit);
  }
 
@@ -99,6 +105,7 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
    };
    heading.setText("الخطوة "+(step+1)+" من 5 — "+t[step]);guide.setText(d[step]);
    primary.setText(step==0&&!access?"فتح إذن الوسائط":step==1?"تأكيد الهاتف وتفعيل المصدر":step>=2?"مراقبة الزر المحدد":"التالي");
+   again.setText(step==0&&!access?"المتابعة دون قراءة العنوان":"إعادة هذه الخطوة");
   }else{
    String[] t={"تأمين السيارة والتحقق من P","إثبات Sport / Manual","اختبار +","اختبار −","خلاصة النسب"};
    String[] d={
@@ -128,7 +135,7 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
    primary.setEnabled(false);boolean source=usb.setMusicSource();changedSource=source;boolean play=usb.play();
    EventJournal.record("GUIDED_USB","SOURCE_PLAY","source="+source+", play="+play);
    h.postDelayed(()->{primary.setEnabled(true);UsbMusicClient.Status s=usb.readStatus();
-    if(s.playing&&!s.title.isEmpty()){step++;render();show("USB يعمل الآن: "+s.title+". بقيت أزرار المقود.");}
+    if(s.playing){step++;render();show(s.title.isEmpty()?"USB يعمل، لكن العنوان غير متاح بعد. سنسجل نقص بيانات ID3 ونواصل اختبار المقود.":"USB يعمل الآن: "+s.title+". بقيت أزرار المقود.");}
     else show("تم إرسال طلب المصدر والتشغيل لكن لم تؤكد الخدمة أغنية تعمل. تحقق من وجود ملفين صوتيين ثم أعد المحاولة. لا تفتح المشغل الأصلي.");
    },1300);return;
   }
@@ -290,7 +297,7 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
   mediaCapture=false;if(sportCapture)sportCapture=false;h.removeCallbacksAndMessages(null);
   try{unregisterReceiver(receiver);}catch(Throwable ignored){}
   if(can!=null)can.removeListener(this);if(usb!=null)usb.disconnect();
-  if(changedSource&&previousSource.matches("[0-9]+")){
+  if(changedSource&&previousSource!=null&&previousSource.matches("[0-9]+")){
    String cur=logic.getActiveSourceId();if(!previousSource.equals(cur))logic.selectSource(Integer.parseInt(previousSource));
   }
   if(tts!=null){tts.stop();tts.shutdown();}getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);super.onDestroy();
