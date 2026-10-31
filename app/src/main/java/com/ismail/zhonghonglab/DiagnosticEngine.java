@@ -165,10 +165,10 @@ public final class DiagnosticEngine {
             String[] pressureStatusNames = {"FLtyrePressureStatus", "FRTyrePressureStatus", "RLTyrePressureStatus", "RRtyrePressureStatus"};
             StringBuilder pressureStatus = new StringBuilder();
             for (int i=0;i<pressureStatusNames.length;i++) {
-                Long state = live.get(pressureStatusNames[i], 1043);
-                if (state == null) continue;
+                Long pressureStateValue = live.get(pressureStatusNames[i], 1043);
+                if (pressureStateValue == null) continue;
                 if (pressureStatus.length()>0) pressureStatus.append(" | ");
-                pressureStatus.append(tyreNames[i]).append("=").append(state);
+                pressureStatus.append(tyreNames[i]).append("=").append(pressureStateValue);
             }
             if (pressureStatus.length()>0) {
                 out.add(CheckResult.info("can.tpms.status", "حالة حساسات TPMS الخام", pressureStatus.toString()));
