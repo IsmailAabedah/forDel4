@@ -54,6 +54,12 @@ public final class MainActivity extends Activity {
             @Override public void onConnected() { handler.post(MainActivity.this::refreshUsbState); }
             @Override public void onDisconnected() { handler.post(MainActivity.this::refreshUsbState); }
             @Override public void onError(String message) { handler.post(() -> setUsbState(message)); }
+            @Override public void onMetadataChanged(String title, String artist, String album) {
+                handler.post(MainActivity.this::refreshUsbState);
+            }
+            @Override public void onPlayStateChanged(boolean playing) {
+                handler.post(MainActivity.this::refreshUsbState);
+            }
         });
         usbClient.connect();
         buildUi();

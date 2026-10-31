@@ -33,6 +33,8 @@ public final class DiagnosticEngine {
                         + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")"));
         out.add(CheckResult.info("abi", "معمارية المعالج",
                 Build.SUPPORTED_ABIS == null ? "غير متاحة" : join(Build.SUPPORTED_ABIS)));
+        out.add(CheckResult.info("can.catalog", "كتالوج إشارات CAN",
+                CanSignalCatalog.ALL.length + " إشارة من كتالوج CarCheck المستخرج"));
 
         packageCheck(out, "com.zhonghong.can", "حزمة CAN");
         packageCheck(out, "com.zhonghong.yzmusic", "مشغل USB Music");
@@ -40,10 +42,26 @@ public final class DiagnosticEngine {
         packageCheck(out, "com.zhonghong.bluetooth", "خدمات Bluetooth");
         packageCheck(out, "com.car.phone_data", "مزود بيانات الهاتف");
 
-        out.add(ServiceProbe.probeBoundService(context, "can.bind", "خدمة CAN",
-                "com.zhonghong.can", "com.zhonghong.can.CanService", 1800));
+        CanServiceClient can = CanServiceClient.get(context);
+        can.connect();
+        if (can.isConnected()) {
+            CanServiceClient.Snapshot snapshot = can.getLatest();
+            Long gear = snapshot == null ? null : snapshot.get("Shifter_Lever_Signals", 1218);
+            out.add(CheckResult.pass("can.live", "قراءة CAN الحية",
+                    "callback مسجل؛ Shifter_Lever_Signals=" + (gear == null ? "بانتظار أول إطار" : gear)));
+        } else {
+            out.add(CheckResult.info("can.live", "قراءة CAN الحية", can.getStatus()));
+        }
+
+        LogicServiceClient logic = LogicServiceClient.get(context);
+        logic.connect();
+        out.add(logic.isConnected() && logic.isDomain1Registered() && logic.isDomain2Registered()
+                ? CheckResult.pass("logic.callbacks", "أحداث Logic",
+                    "تم تسجيل مجالي الحالة 1 والوسائط 2")
+                : CheckResult.info("logic.callbacks", "أحداث Logic", logic.getStatus()));
+
         out.add(ServiceProbe.probeBoundService(context, "usb.bind", "خدمة USB Music",
-                "com.zhonghong.yzmusic", "com.zhonghong.yzmusic.service.UsbMusicService", 1800));
+                "com.zhonghong.yzmusic", "com.zhonghong.music.model.service.UsbMusicService", 1800));
         out.add(ServiceProbe.probeBoundService(context, "video.bind", "خدمة USB Video",
                 "com.zhonghong.yzvideo", "com.zhonghong.yzvideo.service.VideoService", 1200));
 
