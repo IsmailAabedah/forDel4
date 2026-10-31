@@ -1,0 +1,53 @@
+name: Android build and compatibility checks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Install Android SDK platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Inspect known-working CarCheck package
+        run: |
+          set -euo pipefail
+          echo "=== APK signature and hashes ==="
+          sha256sum reference/CarCheck-v1.1.apk reference/CarCheck-jadx-sources.zip
+          echo "=== CarCheck package metadata ==="
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging reference/CarCheck-v1.1.apk || true
+          echo "=== Extracted CarCheck sources ==="
+          mkdir -p build/carcheck-reference
+          unzip -oq reference/CarCheck-jadx-sources.zip -d build/carcheck-reference
+          unzip -l reference/CarCheck-jadx-sources.zip
+          for f in sources/com/carcheck/app/MainActivity.java sources/com/carcheck/app/Runner.java sources/com/carcheck/app/CanSignals.java resources/AndroidManifest.xml; do
+            if [ -f "build/carcheck-reference/$f" ]; then
+              echo
+              echo "===== $f ====="
+              cat "build/carcheck-reference/$f"
+            fi
+          done
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Upload APK and compatibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: zhonghong-integration-lab-debug
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            build/carcheck-reference/
+          if-no-files-found: error
