@@ -26,6 +26,8 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
  private Map<String,Long> baseline=new LinkedHashMap<>();
  private final Set<String> changed=new LinkedHashSet<>();
  private final Set<String> unexpected=new LinkedHashSet<>();
+ private final Set<String> unexpectedActive=new LinkedHashSet<>();
+ private final Map<String,Long> unexpectedBaseline=new LinkedHashMap<>();
  private TextView title,instruction,status,stepCounter;
  private Button start,retry,next;
  private final Runnable timeout=new Runnable(){@Override public void run(){onTimeout();}};
@@ -153,14 +155,19 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
    show("أوقف السيارة وضع P أولاً. القراءة الحالية: السرعة="+speed+"، الغيار الخام="+gear+". لن نبدأ الاختبار في وضع آخر.");
    return;
   }
-  boolean restorationOnly=seenChange&&!changed.isEmpty();
+  boolean restorationOnly=(seenChange&&!changed.isEmpty())||!unexpectedActive.isEmpty();
   if(!restorationOnly){
-   baseline.clear();changed.clear();unexpected.clear();seenChange=false;
+   baseline.clear();changed.clear();unexpected.clear();unexpectedActive.clear();unexpectedBaseline.clear();seenChange=false;
    List<String> missing=new ArrayList<>();
    for(Signal signal:tasks.get(index).signals){
     Long value=snap.get(signal.name,signal.frame);
     if(value==null)missing.add(signal.name+" (frame "+signal.frame+")");
     else baseline.put(signal.key(),value);
+   }
+   for(Map.Entry<String,Long> entry:snap.values.entrySet()){
+    String key=entry.getKey();
+    String name=key.substring(0,key.lastIndexOf("@"));
+    if(isControlSignal(name)&&!baseline.containsKey(key))unexpectedBaseline.put(key,entry.getValue());
    }
    if(baseline.isEmpty()){
     show("لا توجد قراءة أساسية لأي إشارة مطلوبة لهذه الخطوة. ننتظر CAN ولا نبدأ اختباراً غير قابل للرصد: "+joinList(missing));
@@ -178,8 +185,8 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
   start.setText(restorationOnly?"راقب عودة الإشارة إلى وضعها الأصلي":"المراقبة نشطة — نفّذ الحركة الآن");
   retry.setEnabled(false);next.setEnabled(false);
   show(restorationOnly
-      ?"أعد المفتاح/الزر الآن إلى الحالة التي كان عليها قبل الاختبار. لا تنفذ حركة جديدة؛ سنراقب عودة الإشارة الأصلية."
-      :"اضبط المفتاح/الزر المذكور مرة واحدة الآن. ننتظر تغير الإشارة لمدة 12 ثانية. إذا رصدناها سيطلب منك إعادتها إلى الحالة السابقة.");
+      ? "أعد المفتاح/الزر الذي تغيّر إلى حالته الأصلية. لا تنفذ حركة جديدة؛ سنراقب عودة الإشارات التي تحركت."
+      : "اضبط المفتاح/الزر المذكور مرة واحدة الآن. ننتظر تغير الإشارة لمدة 12 ثانية. إذا رصدناها سيطلب منك إعادتها إلى الحالة السابقة.");
   handler.removeCallbacks(timeout);handler.postDelayed(timeout,CAPTURE_MS);
  }
  @Override public void onCanUpdated(CanServiceClient.Snapshot snapshot,int module,List<CanServiceClient.Change> changes){
@@ -194,9 +201,13 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
   for(CanServiceClient.Change c:changes){
    String key=c.signal.key();
    if(!baseline.containsKey(key)){
-    String n=c.signal.name;
-    if(n.contains("Switch_Status")||n.contains("Lamp_Status")||n.contains("Wiper")
-       ||n.contains("Wash")||n.contains("Heater")||n.contains("Window")) unexpected.add(n);
+    Long otherBase=unexpectedBaseline.get(key);
+    if(otherBase!=null&&c.after!=otherBase){
+     unexpected.add(c.signal.name);unexpectedActive.add(key);
+     EventJournal.record("GUIDED_SIGNAL","UNEXPECTED_CHANGE",tasks.get(index).title+" | "+key+" "+c.before+" -> "+c.after);
+    }else if(otherBase!=null&&c.after==otherBase&&unexpectedActive.remove(key)){
+     EventJournal.record("GUIDED_SIGNAL","UNEXPECTED_RESTORED",tasks.get(index).title+" | "+key);
+    }
     continue;
    }
    Long base=baseline.get(key);
@@ -210,7 +221,7 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
     EventJournal.record("GUIDED_SIGNAL","RESTORED",tasks.get(index).title+" | "+key+" returned="+c.after);
    }
   }
-  if(seenChange&&changed.isEmpty()){
+  if(seenChange&&changed.isEmpty()&&unexpectedActive.isEmpty()){
    capturing=false;handler.removeCallbacks(timeout);
    final String msg=summary(true);
    EventJournal.record("GUIDED_SIGNAL","PASS",tasks.get(index).title+" | "+msg);
@@ -229,9 +240,10 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
   start.setEnabled(true);start.setText(seenChange?"مراقبة عودة الإشارة بعد إرجاع المفتاح":"إعادة مراقبة هذه الإشارة");
   retry.setEnabled(true);next.setEnabled(true);
   next.setText(seenChange?"لا تتجاوز قبل إعادة الحالة الأصلية":"لم تظهر الإشارة — تسجيلها غير متاحة والمتابعة");
-  show(seenChange?"رصدنا تغييراً لكن لم نرصد عودة مؤكدة إلى الوضع الأصلي. "+msg+" أعد المفتاح إلى وضعه السابق ثم أعد مراقبة الإرجاع."
-          :"لم تتغير أي إشارة مستهدفة خلال 12 ثانية. "+msg
-            +(unexpected.isEmpty()?"":"\nرصدنا بدلاً منها: "+join(unexpected)+". يبدو أنك استخدمت تحكماً آخر؛ صحح الاختيار قبل اعتماد النتيجة.")
+  show((seenChange&&!changed.isEmpty())||!unexpectedActive.isEmpty()
+          ?"رصدنا تغيراً في إشارة مطلوبة أو غير مطلوبة، ولم ترجع كل الإشارات إلى خط الأساس. "+msg+" أعد جميع المفاتيح التي حركتها إلى وضعها الأصلي ثم اضغط مراقبة الإرجاع."
+          :"لم تتغير إشارة مستهدفة خلال 12 ثانية. "+msg
+            +(unexpected.isEmpty()?"":"\nرصدنا تحكماً آخر ثم عاد إلى وضعه. تأكد من اختيار المفتاح الصحيح.")
             +" تحقق من المفتاح المذكور ثم أعد المحاولة أو سجلها غير متاحة.");
  }
  private void completeStep(String msg){
@@ -241,11 +253,12 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
  }
  private void markUnverified(){
   if(capturing){show("المراقبة جارية؛ لا يمكن تجاوز الخطوة أثناء الرصد.");return;}
-  if(seenChange&&!changed.isEmpty()){
+  if((seenChange&&!changed.isEmpty())||!unexpectedActive.isEmpty()){
    show("لا يمكن الانتقال بعد: رصدنا تغيراً ولم نرصد عودة الإشارة إلى وضعها الأصلي. أعد المفتاح/الزر أولاً ثم انتظر تأكيد العودة.");
    return;
   }
   String msg=seenChange?"تغيرت إشارة ثم عادت: "+summary(true):"لم تظهر استجابة مستهدفة بعد المحاولة الموجهة";
+  if(!unexpected.isEmpty())msg+="؛ إشارات أخرى تغيرت أثناء الخطوة: "+join(unexpected);
   EventJournal.record("GUIDED_SIGNAL","UNVERIFIED",tasks.get(index).title+" | "+msg);
   results.add(tasks.get(index).title+": UNVERIFIED — "+msg);
   index++;render();
@@ -259,6 +272,11 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
    if(old!=null&&now!=null&&old.equals(now)&&restored)b.append(" (عاد)");
   }
   return b.toString();
+ }
+ private boolean isControlSignal(String n){
+  return n.contains("Switch_Status")||n.contains("Lamp_Status")||n.contains("Wiper")
+      ||n.contains("Wash")||n.contains("Heater")||n.contains("Window")||n.contains("Indicator")
+      ||n.contains("Hazard")||n.contains("Fog");
  }
  private String joinList(List<String> values){
   StringBuilder b=new StringBuilder();for(String v:values){if(b.length()>0)b.append("، ");b.append(v);}return b.toString();
