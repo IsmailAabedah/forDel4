@@ -153,13 +153,33 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
    show("أوقف السيارة وضع P أولاً. القراءة الحالية: السرعة="+speed+"، الغيار الخام="+gear+". لن نبدأ الاختبار في وضع آخر.");
    return;
   }
-  baseline.clear();changed.clear();unexpected.clear();
-  for(Signal signal:tasks.get(index).signals)baseline.put(signal.key(),snap.get(signal.name,signal.frame));
-  capturing=true;restoring=false;seenChange=false;deadline=System.currentTimeMillis()+CAPTURE_MS;
-  EventJournal.record("GUIDED_SIGNAL","START",tasks.get(index).title+" baseline="+baseline);
-  start.setEnabled(false);start.setText("المراقبة نشطة — نفّذ الحركة الآن");
+  boolean restorationOnly=seenChange&&!changed.isEmpty();
+  if(!restorationOnly){
+   baseline.clear();changed.clear();unexpected.clear();seenChange=false;
+   List<String> missing=new ArrayList<>();
+   for(Signal signal:tasks.get(index).signals){
+    Long value=snap.get(signal.name,signal.frame);
+    if(value==null)missing.add(signal.name+" (frame "+signal.frame+")");
+    else baseline.put(signal.key(),value);
+   }
+   if(baseline.isEmpty()){
+    show("لا توجد قراءة أساسية لأي إشارة مطلوبة لهذه الخطوة. ننتظر CAN ولا نبدأ اختباراً غير قابل للرصد: "+joinList(missing));
+    return;
+   }
+   if(!missing.isEmpty())EventJournal.record("GUIDED_SIGNAL","BASELINE_PARTIAL",tasks.get(index).title+" missing="+joinList(missing));
+   restoring=false;
+  }else{
+   restoring=true;
+  }
+  capturing=true;deadline=System.currentTimeMillis()+CAPTURE_MS;
+  EventJournal.record("GUIDED_SIGNAL",restorationOnly?"RESTORE_START":"START",
+      tasks.get(index).title+" baseline="+baseline);
+  start.setEnabled(false);
+  start.setText(restorationOnly?"راقب عودة الإشارة إلى وضعها الأصلي":"المراقبة نشطة — نفّذ الحركة الآن");
   retry.setEnabled(false);next.setEnabled(false);
-  show("اضبط المفتاح/الزر المذكور مرة واحدة الآن. ننتظر تغير الإشارة لمدة 12 ثانية. إذا رصدناها سيطلب منك إعادتها إلى الحالة السابقة.");
+  show(restorationOnly
+      ?"أعد المفتاح/الزر الآن إلى الحالة التي كان عليها قبل الاختبار. لا تنفذ حركة جديدة؛ سنراقب عودة الإشارة الأصلية."
+      :"اضبط المفتاح/الزر المذكور مرة واحدة الآن. ننتظر تغير الإشارة لمدة 12 ثانية. إذا رصدناها سيطلب منك إعادتها إلى الحالة السابقة.");
   handler.removeCallbacks(timeout);handler.postDelayed(timeout,CAPTURE_MS);
  }
  @Override public void onCanUpdated(CanServiceClient.Snapshot snapshot,int module,List<CanServiceClient.Change> changes){
@@ -239,6 +259,9 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
    if(old!=null&&now!=null&&old.equals(now)&&restored)b.append(" (عاد)");
   }
   return b.toString();
+ }
+ private String joinList(List<String> values){
+  StringBuilder b=new StringBuilder();for(String v:values){if(b.length()>0)b.append("، ");b.append(v);}return b.toString();
  }
  private String join(Set<String> values){
   StringBuilder b=new StringBuilder();for(String v:values){if(b.length()>0)b.append("، ");b.append(v);}return b.toString();

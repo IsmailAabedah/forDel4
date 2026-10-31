@@ -30,7 +30,7 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
  private String baseline="",action="";
  private Integer keyFound=null;
  private boolean mediaChanged=false;
- private boolean sportCapture=false,sportExpired=false;
+ private boolean sportCapture=false,sportExpired=false,sportSawMotion=false;
  private long sportDeadline;
  private Long sportBaseGear;
  private final List<String> sportValues=new ArrayList<>();
@@ -231,7 +231,7 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
   if(step==1){
    CanServiceClient.Snapshot s=can.getLatest();Long speed=get(s,"Vehicle_Speed",1218),gear=get(s,"Shifter_Lever_Signals",1218);
    if(speed==null||speed!=0){show("يجب أن تكون السيارة متوقفة للتحقق من Sport. السرعة="+speed);return;}
-   if(gear==null||gear==9||gear==10||gear==11||gear==12){show("لم تظهر قيمة وضع يدوي بعد. قيمة الغيار الخام="+gear+". تأكد من S/Manual دون إجبار الذراع ثم أعد التحقق.");return;}
+   if(gear==null||gear!=13L){show("لم تظهر قيمة وضع Manual المتوقعة (13). القيمة الخام الحالية="+gear+". لا نعتمد أي قيمة أخرى كإثبات؛ تأكد من موضع S/Manual دون إجبار الذراع ثم أعد التحقق.");return;}
    EventJournal.record("SPORT","MANUAL_MODE","raw="+gear);step++;render();show("ظهرت قيمة مختلفة عن P/R/N/D: "+gear+". سنحسم الآن قيم + و− بالتسجيل المباشر.");return;
   }
   if(step==2||step==3){startSport(step==2?"PLUS":"MINUS");return;}
@@ -244,9 +244,9 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
   CanServiceClient.Snapshot s=can.getLatest();Long speed=get(s,"Vehicle_Speed",1218),gear=get(s,"Shifter_Lever_Signals",1218);
   if(speed==null||speed!=0||gear==null){show("يبدأ التسجيل فقط والسيارة متوقفة مع قراءة غيار CAN واضحة.");return;}
   sportBaseGear=gear;sportValues.clear();sportValues.add("BASE gear="+gear+" speed="+speed+" ratio="+get(s,"Overal_Ratio",1218));
-  sportDeadline=System.currentTimeMillis()+90000;sportExpired=false;sportCapture=true;primary.setEnabled(false);again.setEnabled(false);
+  sportDeadline=System.currentTimeMillis()+90000;sportExpired=false;sportSawMotion=false;sportCapture=true;primary.setEnabled(false);again.setEnabled(true);again.setText("توقفت السيارة — إنهاء التسجيل");
   EventJournal.record("SPORT",dir+"_START",sportValues.get(0));
-  show("بدأ تسجيل "+(dir.equals("PLUS")?"+":"−")+". لا تلمس الشاشة أثناء القيادة. نفّذ الحركة مرة واحدة فقط في مكان آمن وبحسب دليل السيارة. سيغلق بعد 90 ثانية وعند توقف السيارة.");
+  show("بدأ تسجيل "+(dir.equals("PLUS")?"+":"−")+". لا تلمس الشاشة أثناء القيادة. نفّذ الحركة مرة واحدة فقط في مكان آمن وبحسب دليل السيارة. بعد التوقف التام اضغط «توقفت السيارة — إنهاء التسجيل»؛ وسيُغلق تلقائياً بعد 90 ثانية إذا لم تفعل.");
   h.postDelayed(()->{sportExpired=true;checkSport();},90000);
  }
 
@@ -266,10 +266,21 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
 
  @Override public void onCanUpdated(CanServiceClient.Snapshot s,int module,List<CanServiceClient.Change> changes){
   if(!type.equals("SPORT")||!sportCapture||module!=1)return;
-  for(CanServiceClient.Change c:changes)if(c.signal.name.equals("Shifter_Lever_Signals")){
-   String row="gear "+c.before+"→"+c.after+" speed="+get(s,"Vehicle_Speed",1218)+" ratio="+get(s,"Overal_Ratio",1218);
-   sportValues.add(row);EventJournal.record("SPORT_GEAR",step==2?"PLUS":"MINUS",row);
-   show("رصدنا تغير غيار: "+row+". لا تلمس الشاشة حتى تتوقف السيارة.");
+  Long speed=get(s,"Vehicle_Speed",1218);
+  if(speed!=null&&speed>0L)sportSawMotion=true;
+  for(CanServiceClient.Change c:changes){
+   if(c.signal.name.equals("Shifter_Lever_Signals")||c.signal.name.equals("Overal_Ratio")){
+    String row=c.signal.name+" "+c.before+"→"+c.after
+      +" | gear="+get(s,"Shifter_Lever_Signals",1218)
+      +" | ratio="+get(s,"Overal_Ratio",1218)
+      +" | speed="+speed;
+    sportValues.add(row);EventJournal.record("SPORT_GEAR",step==2?"PLUS":"MINUS",row);
+    show("رصدنا تغير CAN: "+row+". لا تلمس الشاشة حتى تتوقف السيارة.");
+   }
+  }
+  if(sportSawMotion&&speed!=null&&speed==0L){
+   finishSport();
+   return;
   }
   checkSport();refresh();
  }
@@ -277,7 +288,12 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
  private Long get(CanServiceClient.Snapshot s,String n,int f){return s==null?null:s.get(n,f);}
 
  private void retry(){
-  if(sportCapture){show("التسجيل يعمل. لا تستخدم إعادة المحاولة أثناء القيادة؛ ينتظر التطبيق توقف السيارة.");return;}
+  if(sportCapture){
+   Long speed=can==null?null:can.getValue("Vehicle_Speed",1218);
+   if(speed!=null&&speed==0L){finishSport();return;}
+   show("لن نغلق التسجيل أثناء الحركة. أوقف السيارة تماماً ثم استخدم زر إنهاء التسجيل؛ السرعة الحالية="+speed);
+   return;
+  }
   mediaCapture=false;render();show("أعيدت تهيئة الخطوة الحالية.");
  }
  private void refresh(){

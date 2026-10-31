@@ -52,6 +52,21 @@ jobs:
           done
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Validate produced APK package and signature
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          "$AAPT" dump badging "$APK" | tee build/apk-badging.txt
+          grep -F "package: name='com.ismail.zhonghonglab.debug'" build/apk-badging.txt
+          grep -F "sdkVersion:'23'" build/apk-badging.txt
+          grep -F "targetSdkVersion:'22'" build/apk-badging.txt
+          "$APKSIGNER" verify --verbose "$APK"
+          "$ZIPALIGN" -c -v 4 "$APK"
+          sha256sum "$APK" | tee build/apk-sha256.txt
+
       - name: Upload APK and compatibility evidence
         uses: actions/upload-artifact@v4
         with:

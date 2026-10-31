@@ -150,6 +150,30 @@ public final class DiagnosticEngine {
                     ? CheckResult.pass("can.tpms", "قراءات ضغط الإطارات", tpms.toString())
                     : CheckResult.info("can.tpms", "قراءات ضغط الإطارات", "لا توجد قراءات حية من وحدة TPMS حالياً"));
 
+            String[] tyreTempNames = {"FLTyreTemperatureValue", "FRTyreTemperatureValue", "RLtyreTemperatureValue", "RRTyreTemperatureValue"};
+            StringBuilder tyreTemps = new StringBuilder();
+            for (int i=0;i<tyreTempNames.length;i++) {
+                Long rawTemp = live.get(tyreTempNames[i], 1042);
+                if (rawTemp == null) continue;
+                if (tyreTemps.length()>0) tyreTemps.append(" | ");
+                tyreTemps.append(tyreNames[i]).append("=")
+                        .append(String.format(java.util.Locale.US,"%.0f °C", rawTemp - 40.0));
+            }
+            if (tyreTemps.length()>0) {
+                out.add(CheckResult.info("can.tpms.temperature", "حرارة الإطارات", tyreTemps.toString()));
+            }
+            String[] pressureStatusNames = {"FLtyrePressureStatus", "FRTyrePressureStatus", "RLTyrePressureStatus", "RRtyrePressureStatus"};
+            StringBuilder pressureStatus = new StringBuilder();
+            for (int i=0;i<pressureStatusNames.length;i++) {
+                Long state = live.get(pressureStatusNames[i], 1043);
+                if (state == null) continue;
+                if (pressureStatus.length()>0) pressureStatus.append(" | ");
+                pressureStatus.append(tyreNames[i]).append("=").append(state);
+            }
+            if (pressureStatus.length()>0) {
+                out.add(CheckResult.info("can.tpms.status", "حالة حساسات TPMS الخام", pressureStatus.toString()));
+            }
+
             Long ambient = live.get("AmbientTemp", 695);
             out.add(ambient == null || ambient >= 254
                     ? CheckResult.info("can.ambient", "الحرارة الخارجية", "لا توجد قراءة صالحة حالياً")
