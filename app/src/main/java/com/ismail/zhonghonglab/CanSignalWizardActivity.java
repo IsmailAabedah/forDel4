@@ -273,6 +273,9 @@ public final class CanSignalWizardActivity extends Activity implements CanServic
   }
   return b.toString();
  }
+ @Override public void onCanError(String error){
+  runOnUiThread(()->show("تعذر تحديث CAN: "+error));
+ }
  private void show(String s){if(status!=null)status.setText(s);}
  private TextView label(String s,int size,String color,boolean bold){
   TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(Color.parseColor(color));if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;
