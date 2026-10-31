@@ -1,0 +1,51 @@
+name: Reference inspection
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect CarCheck APK and extracted sources
+        run: |
+          set -euo pipefail
+          echo "=== Reference file hashes ==="
+          sha256sum reference/CarCheck-v1.1.apk reference/CarCheck-jadx-sources.zip
+          echo "=== APK badging ==="
+          SDK="$ANDROID_HOME"
+          if [ -x "$SDK/build-tools/35.0.0/aapt" ]; then
+            "$SDK/build-tools/35.0.0/aapt" dump badging reference/CarCheck-v1.1.apk || true
+          else
+            echo "aapt not available on this runner image"
+          fi
+          echo "=== Extracted source inventory ==="
+          unzip -l reference/CarCheck-jadx-sources.zip
+          mkdir -p build/carcheck-reference
+          unzip -oq reference/CarCheck-jadx-sources.zip -d build/carcheck-reference
+          for f in \
+            sources/com/carcheck/app/MainActivity.java \
+            sources/com/carcheck/app/Runner.java \
+            sources/com/carcheck/app/CanSignals.java \
+            sources/com/carcheck/app/Log.java \
+            sources/com/carcheck/app/Bx.java \
+            sources/com/carcheck/app/KeepAlive.java \
+            resources/AndroidManifest.xml; do
+            if [ -f "build/carcheck-reference/$f" ]; then
+              echo
+              echo "===== $f ====="
+              cat "build/carcheck-reference/$f"
+            fi
+          done
+      - name: Upload extracted compatibility source
+        uses: actions/upload-artifact@v4
+        with:
+          name: carcheck-reference-source
+          path: build/carcheck-reference/
+          if-no-files-found: error
