@@ -250,7 +250,10 @@ public final class MainActivity extends Activity {
         }
         MediaSessionMonitor.Snapshot s = MediaSessionMonitor.chooseBest(this);
         if (s == null) {
-            btState.setText("Bluetooth Media: لا توجد جلسة وسائط منشورة حالياً");
+            SystemStateClient state = SystemStateClient.get(this);
+            btState.setText("Bluetooth Media: لا توجد MediaSession | اتصال BT: "
+                    + (state.isBluetoothConnected() ? "متصل" : "غير مثبت")
+                    + " | " + state.getStatus());
         } else {
             btState.setText("MediaSession: " + (s.isPlaying() ? "يعمل" : "متوقف")
                     + "  |  " + s.title + "  |  " + s.artist + "  |  " + s.packageName);

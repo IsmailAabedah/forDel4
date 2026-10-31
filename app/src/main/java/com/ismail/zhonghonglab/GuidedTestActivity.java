@@ -47,6 +47,7 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
   super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
   type=getIntent().getStringExtra(EXTRA_TYPE);if(type==null)type="USB";
   logic=LogicServiceClient.get(this);logic.connect();previousSource=logic.getActiveSourceId();
+  SystemStateClient.get(this).connect();
   if(type.equals("USB")){
    usb=new UsbMusicClient(this,new UsbMusicClient.Listener(){
     public void onConnected(){runOnUiThread(GuidedTestActivity.this::refresh);}
@@ -276,8 +277,11 @@ public final class GuidedTestActivity extends Activity implements CanServiceClie
    UsbMusicClient.Status s=usb.readStatus();status.setText("USB: "+(s.playing?"يعمل":"متوقف")+" | "+s.title+" | "+s.artist);
   }else if(type.equals("BLUETOOTH")){
    MediaSessionMonitor.Snapshot s=MediaSessionMonitor.chooseBest(this);
-   status.setText(s==null?"Bluetooth: لا توجد MediaSession منشورة | "+logic.getStatus():
-    "Bluetooth: "+(s.isPlaying()?"يعمل":"متوقف")+" | "+s.title+" | "+s.artist);
+   SystemStateClient state = SystemStateClient.get(this);
+   status.setText(s==null?"Bluetooth: لا توجد MediaSession | BT="+(state.isBluetoothConnected()?"متصل":"غير متصل")
+      +" | "+logic.getStatus():
+    "Bluetooth: "+(s.isPlaying()?"يعمل":"متوقف")+" | "+s.title+" | "+s.artist
+      +" | اتصال BT="+(state.isBluetoothConnected()?"متصل":"غير مثبت"));
   }else{
    CanServiceClient.Snapshot s=can==null?null:can.getLatest();
    status.setText("CAN: "+(can==null?"—":can.getStatus())+" | gear="+get(s,"Shifter_Lever_Signals",1218)

@@ -53,6 +53,38 @@ public final class DiagnosticEngine {
             out.add(CheckResult.info("can.live", "قراءة CAN الحية", can.getStatus()));
         }
 
+        SystemStateClient state = SystemStateClient.get(context);
+        state.connect();
+        out.add(state.isConnected()
+                ? CheckResult.pass("systemstate", "حالة Bluetooth / ACC",
+                    "BT connected=" + state.isBluetoothConnected() + ", call=" + state.isBluetoothInCall()
+                            + ", network=" + state.isNetworkConnected())
+                : CheckResult.info("systemstate", "حالة Bluetooth / ACC", state.getStatus()));
+
+        McuReadClient mcu = new McuReadClient();
+        if (mcu.connect()) {
+            for (int domain = 1; domain <= 3; domain++) {
+                String json = mcu.readAll(domain);
+                if (json == null) {
+                    out.add(CheckResult.info("mcu.domain." + domain, "قراءة MCU المجال " + domain, mcu.getStatus()));
+                } else {
+                    String summary = "JSON " + json.length() + " حرفاً";
+                    try {
+                        org.json.JSONObject object = new org.json.JSONObject(json);
+                        if (domain == 1) summary += "؛ التردد=" + object.optString("getfreq", "غير متاح")
+                                + "؛ اسم المحطة=" + object.optString("RADIO_NAME", "غير متاح");
+                        if (domain == 2) summary += "؛ الصوت=" + object.optString("SYS_VOL", "غير متاح")
+                                + "؛ MUTE=" + object.optString("SYS_MUTE", "غير متاح");
+                        if (domain == 3) summary += "؛ ACC=" + object.optString("ACC_STATE", "غير متاح")
+                                + "؛ المصدر=" + object.optString("MCU_SOURCE", "غير متاح");
+                    } catch (Throwable ignored) {}
+                    out.add(CheckResult.pass("mcu.domain." + domain, "قراءة MCU المجال " + domain, summary));
+                }
+            }
+        } else {
+            out.add(CheckResult.info("mcu.read", "قراءة MCU", mcu.getStatus()));
+        }
+
         LogicServiceClient logic = LogicServiceClient.get(context);
         logic.connect();
         out.add(logic.isConnected() && logic.isDomain1Registered() && logic.isDomain2Registered()
