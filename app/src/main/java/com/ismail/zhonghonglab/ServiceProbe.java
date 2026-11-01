@@ -30,11 +30,11 @@ public final class ServiceProbe {
                 connected[0] = false;
                 latch.countDown();
             }
-            @Override public void onNullBinding(ComponentName name) {
+            public void onNullBinding(ComponentName name) {
                 error[0] = "Service returned a null Binder";
                 latch.countDown();
             }
-            @Override public void onBindingDied(ComponentName name) {
+            public void onBindingDied(ComponentName name) {
                 error[0] = "Binding died";
                 latch.countDown();
             }
