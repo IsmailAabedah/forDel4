@@ -101,7 +101,7 @@ jobs:
           grep -F "package: name='com.ismail.zhonghonglab'" "$REPORT/badging.txt"
           grep -F "sdkVersion:'19'" "$REPORT/badging.txt"
           grep -F "targetSdkVersion:'22'" "$REPORT/badging.txt"
-          DEX_COUNT="$(unzip -Z1 "$APK" | grep -Ec '^classes([0-9]+)?\.dex)"
+          DEX_COUNT="$(unzip -Z1 "$APK" | grep -Ec '^classes([0-9]+)?\.dex$')"
           test "$DEX_COUNT" -eq 1
           unzip -t "$APK"
           "$ZIPALIGN" -c -v 4 "$APK"
