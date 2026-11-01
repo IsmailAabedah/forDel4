@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="22" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.ismail.zhonghonglab">
+
+    <uses-sdk
+        android:minSdkVersion="19"
+        android:targetSdkVersion="22" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -11,23 +16,24 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:allowBackup="false"
         android:label="ZhongHong Integration Lab"
-        android:icon="@drawable/ic_lab"
-        android:theme="@style/AppTheme"
-        android:usesCleartextTraffic="true"
-        android:supportsRtl="true">
+        android:theme="@android:style/Theme.Holo.NoActionBar">
+
         <activity
-            android:name=".GuidedTestActivity"
+            android:name="com.ismail.zhonghonglab.GuidedTestActivity"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <activity
-            android:name=".CanSignalWizardActivity"
+            android:name="com.ismail.zhonghonglab.CanSignalWizardActivity"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <activity
-            android:name=".MainActivity"
+            android:name="com.ismail.zhonghonglab.MainActivity"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
@@ -35,8 +41,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
         <service
-            android:name=".MediaNotificationListener"
+            android:name="com.ismail.zhonghonglab.MediaNotificationListener"
             android:label="ZhongHong Media Access"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
