@@ -117,21 +117,21 @@ jobs:
           import sys, zipfile, struct
           p=sys.argv[1]
           dos_time=0
-          dos_date=((2020-1980)<<9)|(1<<5)|1
+          dos_date=(1<<5)|1
           with zipfile.ZipFile(p) as z:
               offsets=[x.header_offset for x in z.infolist()]
           data=bytearray(open(p,'rb').read())
           for off in offsets:
-              if data[off:off+4] != b'PK\\x03\\x04':
+              if data[off:off+4] != bytes.fromhex('504b0304'):
                   raise SystemExit("Bad local ZIP header")
               struct.pack_into('<HH', data, off+10, dos_time, dos_date)
-          eocd=data.rfind(b'PK\\x05\\x06')
+          eocd=data.rfind(bytes.fromhex('504b0506'))
           if eocd < 0:
               raise SystemExit("Missing ZIP central directory")
           count=struct.unpack_from('<H', data, eocd+10)[0]
           pos=struct.unpack_from('<I', data, eocd+16)[0]
           for _ in range(count):
-              if data[pos:pos+4] != b'PK\\x01\\x02':
+              if data[pos:pos+4] != bytes.fromhex('504b0102'):
                   raise SystemExit("Bad central directory header")
               struct.pack_into('<HH', data, pos+12, dos_time, dos_date)
               name_len, extra_len, comment_len=struct.unpack_from('<HHH', data, pos+28)
