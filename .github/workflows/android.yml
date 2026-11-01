@@ -13,11 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Select Java 17 for current Android SDK tools
+
+      - name: Select Java 17 for Android SDK tools
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Install isolated Android 7 SDK and API 25 emulator
         run: |
           set -euo pipefail
@@ -29,65 +31,71 @@ jobs:
           mkdir -p "$LEGACY_SDK"
           yes | "$SDKMANAGER" --sdk_root="$LEGACY_SDK" --licenses >/dev/null || true
           "$SDKMANAGER" --sdk_root="$LEGACY_SDK" "platforms;android-25" "build-tools;25.0.3" "platform-tools" "emulator" "system-images;android-25;default;x86"
-
           echo "ANDROID_HOME=$LEGACY_SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$LEGACY_SDK" >> "$GITHUB_ENV"
           echo "LEGACY_AVDMANAGER=$AVDMANAGER" >> "$GITHUB_ENV"
-      - name: Select Java 8 for the legacy Gradle toolchain
+
+      - name: Select Java 8 for legacy Gradle
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '8'
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '4.6'
-      - name: Inspect known-working CarCheck APK layout
+
+      - name: Inspect known-working CarCheck APK ZIP metadata
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/25.0.3/aapt" dump badging reference/CarCheck-v1.1.apk
           python3 - <<'PY'
           import zipfile
-          for path in ["reference/CarCheck-v1.1.apk"]:
-              print("REFERENCE:", path)
-              with zipfile.ZipFile(path) as z:
-                  for x in z.infolist():
-                      if x.filename in ("AndroidManifest.xml", "classes.dex", "resources.arsc") or x.filename.endswith(".RSA"):
-                          print(x.filename, "method=", x.compress_type, "date=", x.date_time, "size=", x.file_size)
+          with zipfile.ZipFile("reference/CarCheck-v1.1.apk") as z:
+              for x in z.infolist():
+                  if x.filename in ("AndroidManifest.xml", "classes.dex", "resources.arsc") or x.filename.endswith(".RSA"):
+                      print(x.filename, "compression=", x.compress_type, "date=", x.date_time)
           PY
           unzip -t reference/CarCheck-v1.1.apk
-      - name: Build with legacy Android Gradle Plugin
+
+      - name: Build with Android Gradle Plugin 3.2.1
         run: gradle --no-daemon --stacktrace :app:assembleDebug
-      - name: Normalize APK ZIP timestamps to Android-compatible DOS date
+
+      - name: Normalize ZIP timestamps to same valid date as CarCheck
         run: |
           set -euo pipefail
           python3 - "app/build/outputs/apk/debug/app-debug.apk" <<'PY'
           import sys, zipfile, struct
-          p=sys.argv[1]
-          dos_time=0
-          dos_date=(1<<5)|1  # 1980-01-01, same as the known-working CarCheck APK
+          p = sys.argv[1]
+          dos_time = 0
+          dos_date = (1 << 5) | 1  # 1980-01-01
           with zipfile.ZipFile(p) as z:
-              offsets=[x.header_offset for x in z.infolist()]
-          data=bytearray(open(p,'rb').read())
+              offsets = [x.header_offset for x in z.infolist()]
+          data = bytearray(open(p, "rb").read())
           for off in offsets:
               if data[off:off+4] != bytes.fromhex("504b0304"):
-                  raise SystemExit("Bad local ZIP header")
-              struct.pack_into('<HH', data, off+10, dos_time, dos_date)
-          eocd=data.rfind(bytes.fromhex("504b0506"))
+                  raise SystemExit("Invalid local ZIP header")
+              struct.pack_into("<HH", data, off+10, dos_time, dos_date)
+          eocd = data.rfind(bytes.fromhex("504b0506"))
           if eocd < 0:
-              raise SystemExit("Missing ZIP central directory")
-          count=struct.unpack_from('<H', data, eocd+10)[0]
-          pos=struct.unpack_from('<I', data, eocd+16)[0]
+              raise SystemExit("Missing ZIP end-of-central-directory record")
+          count = struct.unpack_from("<H", data, eocd+10)[0]
+          pos = struct.unpack_from("<I", data, eocd+16)[0]
           for _ in range(count):
               if data[pos:pos+4] != bytes.fromhex("504b0102"):
-                  raise SystemExit("Bad central directory header")
-              struct.pack_into('<HH', data, pos+12, dos_time, dos_date)
-              name_len, extra_len, comment_len=struct.unpack_from('<HHH', data, pos+28)
-              pos += 46+name_len+extra_len+comment_len
-          open(p,'wb').write(data)
+                  raise SystemExit("Invalid central directory header")
+              struct.pack_into("<HH", data, pos+12, dos_time, dos_date)
+              name_len, extra_len, comment_len = struct.unpack_from("<HHH", data, pos+28)
+              pos += 46 + name_len + extra_len + comment_len
+          with open(p, "wb") as f:
+              f.write(data)
           with zipfile.ZipFile(p) as z:
-              print("Normalized APK timestamps:", [(x.filename,x.date_time) for x in z.infolist()])
+              print("ZIP timestamps after normalization:", [(x.filename, x.date_time) for x in z.infolist()])
+              if any(x.date_time != (1980, 1, 1, 0, 0, 0) for x in z.infolist()):
+                  raise SystemExit("ZIP timestamp normalization did not stick")
           PY
-      - name: Inspect and verify APK container
+
+      - name: Verify APK for Android 7
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
@@ -96,170 +104,64 @@ jobs:
           AAPT="$ANDROID_HOME/build-tools/25.0.3/aapt"
           APKSIGNER="$ANDROID_HOME/build-tools/25.0.3/apksigner"
           ZIPALIGN="$ANDROID_HOME/build-tools/25.0.3/zipalign"
+
           test -s "$APK"
           "$AAPT" dump badging "$APK" | tee "$REPORT/badging.txt"
           grep -F "package: name='com.ismail.zhonghonglab'" "$REPORT/badging.txt"
           grep -F "sdkVersion:'19'" "$REPORT/badging.txt"
           grep -F "targetSdkVersion:'22'" "$REPORT/badging.txt"
-          DEX_COUNT="$(unzip -Z1 "$APK" | grep -Ec '^classes([0-9]+)?\.dex$')"
-          test "$DEX_COUNT" -eq 1
-          unzip -t "$APK"
+
+          python3 - "$APK" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              names = z.namelist()
+              dex = [n for n in names if n == "classes.dex" or (n.startswith("classes") and n.endswith(".dex"))]
+              print("DEX FILES:", dex)
+              if len(dex) != 1:
+                  raise SystemExit("APK must contain exactly one DEX file")
+              if z.testzip() is not None:
+                  raise SystemExit("ZIP CRC test failed")
+          PY
+
           "$ZIPALIGN" -c -v 4 "$APK"
           "$APKSIGNER" verify --verbose --print-certs --min-sdk-version 19 --max-sdk-version 25 "$APK" | tee "$REPORT/signature.txt"
           grep -F "Verified using v1 scheme (JAR signing): true" "$REPORT/signature.txt"
-          python3 - "$APK" <<'PY'
-          import sys, zipfile
-          p=sys.argv[1]
-          with zipfile.ZipFile(p) as z:
-              print("BUILT APK ENTRY LAYOUT:", p)
-              for x in z.infolist():
-                  print(x.filename, "method=", x.compress_type, "date=", x.date_time, "size=", x.file_size)
-          PY
+          unzip -t "$APK"
           sha256sum "$APK" | tee "$REPORT/sha256.txt"
-      - name: Test installation on a real Android 7 API 25 emulator
+
+      - name: Install both reference and new APK on Android 7 API 25 emulator
         timeout-minutes: 15
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
           ADB="$ANDROID_HOME/platform-tools/adb"
           EMULATOR="$ANDROID_HOME/emulator/emulator"
+
           echo no | "$LEGACY_AVDMANAGER" create avd --force -n api25-parser-test -k "system-images;android-25;default;x86" --device "Nexus 5X"
           "$EMULATOR" -avd api25-parser-test -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -no-metrics > "$RUNNER_TEMP/emulator.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/emulator.pid"
           "$ADB" wait-for-device
+
+          BOOTED=0
           for i in $(seq 1 120); do
-            BOOTED="$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
-            [ "$BOOTED" = "1" ] && break
+            if [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+              BOOTED=1
+              break
+            fi
             sleep 2
           done
-          [ "$BOOTED" = "1" ] || { cat "$RUNNER_TEMP/emulator.log"; exit 1; }
+          if [ "$BOOTED" -ne 1 ]; then
+            cat "$RUNNER_TEMP/emulator.log"
+            exit 1
+          fi
 
           "$ADB" install -r reference/CarCheck-v1.1.apk
-
-          set +e
-          "$ADB" install -r "$APK" > "$RUNNER_TEMP/install-original.txt" 2>&1
-          ORIGINAL_RC=$?
-          set -e
-          cat "$RUNNER_TEMP/install-original.txt"
-          if [ "$ORIGINAL_RC" -ne 0 ]; then
-            echo "Original APK install failed; normalize DOS ZIP timestamps and retry."
-            python3 - "$APK" <<'PY'
-          import sys, zipfile, struct
-          p=sys.argv[1]
-          dos_time=0
-          dos_date=(1<<5)|1
-          with zipfile.ZipFile(p) as z:
-              offsets=[x.header_offset for x in z.infolist()]
-          data=bytearray(open(p,'rb').read())
-          for off in offsets:
-              if data[off:off+4] != bytes.fromhex('504b0304'):
-                  raise SystemExit("Bad local ZIP header")
-              struct.pack_into('<HH', data, off+10, dos_time, dos_date)
-          eocd=data.rfind(bytes.fromhex('504b0506'))
-          if eocd < 0:
-              raise SystemExit("Missing ZIP central directory")
-          count=struct.unpack_from('<H', data, eocd+10)[0]
-          pos=struct.unpack_from('<I', data, eocd+16)[0]
-          for _ in range(count):
-              if data[pos:pos+4] != bytes.fromhex('504b0102'):
-                  raise SystemExit("Bad central directory header")
-              struct.pack_into('<HH', data, pos+12, dos_time, dos_date)
-              name_len, extra_len, comment_len=struct.unpack_from('<HHH', data, pos+28)
-              pos += 46+name_len+extra_len+comment_len
-          open(p,'wb').write(data)
-          with zipfile.ZipFile(p) as z:
-              print("NORMALIZED ENTRY TIMES:", [(x.filename,x.date_time) for x in z.infolist()])
-          PY
-            "$ANDROID_HOME/build-tools/25.0.3/apksigner" verify --verbose "$APK"
-            "$ADB" install -r "$APK"
-          fi
+          "$ADB" install -r "$APK"
           "$ADB" shell am start -n com.ismail.zhonghonglab/com.ismail.zhonghonglab.MainActivity
-          "$ADB" shell dumpsys package com.ismail.zhonghonglab > "$RUNNER_TEMP/installed-package.txt"
-          cat "$RUNNER_TEMP/installed-package.txt" | head -80
-      - name: Upload standalone APK
+          "$ADB" shell dumpsys package com.ismail.zhonghonglab | head -80
+
+      - name: Upload tested standalone APK
         uses: actions/upload-artifact@v4
         with:
-          name: zhonghong-integration-lab-legacy-android7-v1.1
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-)"
-          test "$DEX_COUNT" -eq 1
-          unzip -t "$APK"
-          "$ZIPALIGN" -c -v 4 "$APK"
-          "$APKSIGNER" verify --verbose --print-certs --min-sdk-version 19 --max-sdk-version 25 "$APK" | tee "$REPORT/signature.txt"
-          grep -F "Verified using v1 scheme (JAR signing): true" "$REPORT/signature.txt"
-          python3 - "$APK" <<'PY'
-          import sys, zipfile
-          p=sys.argv[1]
-          with zipfile.ZipFile(p) as z:
-              print("BUILT APK ENTRY LAYOUT:", p)
-              for x in z.infolist():
-                  print(x.filename, "method=", x.compress_type, "date=", x.date_time, "size=", x.file_size)
-          PY
-          sha256sum "$APK" | tee "$REPORT/sha256.txt"
-      - name: Test installation on a real Android 7 API 25 emulator
-        timeout-minutes: 15
-        run: |
-          set -euo pipefail
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          ADB="$ANDROID_HOME/platform-tools/adb"
-          EMULATOR="$ANDROID_HOME/emulator/emulator"
-          echo no | "$LEGACY_AVDMANAGER" create avd --force -n api25-parser-test -k "system-images;android-25;default;x86" --device "Nexus 5X"
-          "$EMULATOR" -avd api25-parser-test -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -no-metrics > "$RUNNER_TEMP/emulator.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/emulator.pid"
-          "$ADB" wait-for-device
-          for i in $(seq 1 120); do
-            BOOTED="$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
-            [ "$BOOTED" = "1" ] && break
-            sleep 2
-          done
-          [ "$BOOTED" = "1" ] || { cat "$RUNNER_TEMP/emulator.log"; exit 1; }
-
-          "$ADB" install -r reference/CarCheck-v1.1.apk
-
-          set +e
-          "$ADB" install -r "$APK" > "$RUNNER_TEMP/install-original.txt" 2>&1
-          ORIGINAL_RC=$?
-          set -e
-          cat "$RUNNER_TEMP/install-original.txt"
-          if [ "$ORIGINAL_RC" -ne 0 ]; then
-            echo "Original APK install failed; normalize DOS ZIP timestamps and retry."
-            python3 - "$APK" <<'PY'
-          import sys, zipfile, struct
-          p=sys.argv[1]
-          dos_time=0
-          dos_date=(1<<5)|1
-          with zipfile.ZipFile(p) as z:
-              offsets=[x.header_offset for x in z.infolist()]
-          data=bytearray(open(p,'rb').read())
-          for off in offsets:
-              if data[off:off+4] != bytes.fromhex('504b0304'):
-                  raise SystemExit("Bad local ZIP header")
-              struct.pack_into('<HH', data, off+10, dos_time, dos_date)
-          eocd=data.rfind(bytes.fromhex('504b0506'))
-          if eocd < 0:
-              raise SystemExit("Missing ZIP central directory")
-          count=struct.unpack_from('<H', data, eocd+10)[0]
-          pos=struct.unpack_from('<I', data, eocd+16)[0]
-          for _ in range(count):
-              if data[pos:pos+4] != bytes.fromhex('504b0102'):
-                  raise SystemExit("Bad central directory header")
-              struct.pack_into('<HH', data, pos+12, dos_time, dos_date)
-              name_len, extra_len, comment_len=struct.unpack_from('<HHH', data, pos+28)
-              pos += 46+name_len+extra_len+comment_len
-          open(p,'wb').write(data)
-          with zipfile.ZipFile(p) as z:
-              print("NORMALIZED ENTRY TIMES:", [(x.filename,x.date_time) for x in z.infolist()])
-          PY
-            "$ANDROID_HOME/build-tools/25.0.3/apksigner" verify --verbose "$APK"
-            "$ADB" install -r "$APK"
-          fi
-          "$ADB" shell am start -n com.ismail.zhonghonglab/com.ismail.zhonghonglab.MainActivity
-          "$ADB" shell dumpsys package com.ismail.zhonghonglab > "$RUNNER_TEMP/installed-package.txt"
-          cat "$RUNNER_TEMP/installed-package.txt" | head -80
-      - name: Upload standalone APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: zhonghong-integration-lab-legacy-android7-v1.1
+          name: zhonghong-integration-lab-android7-tested-v1.1
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
