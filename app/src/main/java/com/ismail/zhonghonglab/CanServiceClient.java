@@ -46,7 +46,7 @@ public final class CanServiceClient {
    }catch(Throwable t){fail("CAN callback: "+t);}});
   }
   @Override public void onServiceDisconnected(ComponentName n){binder=null;registered=false;bound=false;fail("انقطع اتصال خدمة CAN");}
-  @Override public void onBindingDied(ComponentName n){binder=null;registered=false;bound=false;fail("توفي ربط خدمة CAN");}
+  public void onBindingDied(ComponentName n){binder=null;registered=false;bound=false;fail("توفي ربط خدمة CAN");}
  };
  private final Binder callback=new Binder(){
   {attachInterface(null,CB);}
