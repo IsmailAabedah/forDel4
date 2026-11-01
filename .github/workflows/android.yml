@@ -1,4 +1,4 @@
-name: Android build and compatibility checks
+name: Android 7 legacy APK build
 
 on:
   push:
@@ -16,50 +16,56 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '8'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "7.6.4"
-      - name: Install legacy Android SDK platform and build tools
+          gradle-version: '4.6'
+      - name: Install Android 7-era SDK tools
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
           test -n "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-28" "build-tools;30.0.3"
-      - name: Inspect known-working CarCheck package
+          "$SDKMANAGER" "platforms;android-25" "build-tools;25.0.3"
+      - name: Inspect working CarCheck reference
         run: |
           set -euo pipefail
-          sha256sum reference/CarCheck-v1.1.apk reference/CarCheck-jadx-sources.zip
-          "$ANDROID_HOME/build-tools/30.0.3/aapt" dump badging reference/CarCheck-v1.1.apk
+          "$ANDROID_HOME/build-tools/25.0.3/aapt" dump badging reference/CarCheck-v1.1.apk
           unzip -t reference/CarCheck-v1.1.apk
-      - name: Build legacy-compatible debug APK
+      - name: Build with legacy Android Gradle Plugin
         run: gradle --no-daemon --stacktrace :app:assembleDebug
-      - name: Validate APK for Android 7.x
+      - name: Verify standalone APK package
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
-          REPORT_DIR="app/build/reports/compatibility"
-          mkdir -p "$REPORT_DIR"
-          AAPT="$ANDROID_HOME/build-tools/30.0.3/aapt"
-          APKSIGNER="$ANDROID_HOME/build-tools/30.0.3/apksigner"
-          ZIPALIGN="$ANDROID_HOME/build-tools/30.0.3/zipalign"
+          REPORT="app/build/reports/legacy-apk"
+          mkdir -p "$REPORT"
+          AAPT="$ANDROID_HOME/build-tools/25.0.3/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/25.0.3/apksigner"
+          ZIPALIGN="$ANDROID_HOME/build-tools/25.0.3/zipalign"
 
           test -s "$APK"
-          "$AAPT" dump badging "$APK" | tee "$REPORT_DIR/apk-badging.txt"
-          grep -F "package: name='com.ismail.zhonghonglab.debug'" "$REPORT_DIR/apk-badging.txt"
-          grep -F "sdkVersion:'21'" "$REPORT_DIR/apk-badging.txt"
-          grep -F "targetSdkVersion:'22'" "$REPORT_DIR/apk-badging.txt"
+          "$AAPT" dump badging "$APK" | tee "$REPORT/badging.txt"
+          grep -F "package: name='com.ismail.zhonghonglab'" "$REPORT/badging.txt"
+          grep -F "sdkVersion:'19'" "$REPORT/badging.txt"
+          grep -F "targetSdkVersion:'22'" "$REPORT/badging.txt"
+
+          DEX_COUNT="$(unzip -Z1 "$APK" | grep -Ec '^classes([0-9]+)?\.dex$')"
+          test "$DEX_COUNT" -eq 1
+          if unzip -Z1 "$APK" | grep -q '^lib/'; then
+            echo "Unexpected native libraries in APK" >&2
+            exit 1
+          fi
 
           "$ZIPALIGN" -c -v 4 "$APK"
-          "$APKSIGNER" verify --verbose --print-certs --min-sdk-version 21 --max-sdk-version 25 "$APK" | tee "$REPORT_DIR/apk-signature.txt"
-          grep -F "Verified using v1 scheme (JAR signing): true" "$REPORT_DIR/apk-signature.txt"
+          "$APKSIGNER" verify --verbose --print-certs --min-sdk-version 19 --max-sdk-version 25 "$APK" | tee "$REPORT/signature.txt"
+          grep -F "Verified using v1 scheme (JAR signing): true" "$REPORT/signature.txt"
           unzip -t "$APK"
-          sha256sum "$APK" | tee "$REPORT_DIR/apk-sha256.txt"
-      - name: Upload APK
+          sha256sum "$APK" | tee "$REPORT/sha256.txt"
+      - name: Upload standalone APK
         uses: actions/upload-artifact@v4
         with:
-          name: zhonghong-integration-lab-android7-v0.1.1
+          name: zhonghong-integration-lab-legacy-android7-v1.0
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
