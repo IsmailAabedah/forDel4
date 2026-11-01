@@ -71,7 +71,7 @@ public final class UsbMusicClient {
             EventJournal.record("USB_MUSIC","BINDER_DISCONNECTED",name.flattenToShortString());
             if(listener!=null) listener.onDisconnected();
         }
-        @Override public void onBindingDied(ComponentName name) {
+        public void onBindingDied(ComponentName name) {
             synchronized(UsbMusicClient.this) { binder=null;descriptor="";bound=false;listenerRegistered=false; }
             fail("انتهى ربط خدمة USB Music");
         }
