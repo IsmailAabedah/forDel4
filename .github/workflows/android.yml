@@ -18,14 +18,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android 7-era SDK tools
+      - name: Install isolated Android 7-era SDK
         run: |
           set -euo pipefail
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          HOST_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(find "$HOST_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
           test -n "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-25" "build-tools;25.0.3"
+
+          LEGACY_SDK="$RUNNER_TEMP/android-sdk-legacy"
+          mkdir -p "$LEGACY_SDK"
+          yes | "$SDKMANAGER" --sdk_root="$LEGACY_SDK" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$LEGACY_SDK" "platforms;android-25" "build-tools;25.0.3"
+
+          echo "ANDROID_HOME=$LEGACY_SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$LEGACY_SDK" >> "$GITHUB_ENV"
       - name: Select Java 8 for the legacy Gradle toolchain
         uses: actions/setup-java@v4
         with:
