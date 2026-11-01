@@ -13,20 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect CarCheck APK and extracted sources
+      - name: Inspect APK archive structure and signing entries
         run: |
           set -euo pipefail
-          echo "=== Reference file hashes ==="
-          sha256sum reference/CarCheck-v1.1.apk reference/CarCheck-jadx-sources.zip
-          echo "=== APK badging ==="
-          SDK="$ANDROID_HOME"
-          if [ -x "$SDK/build-tools/35.0.0/aapt" ]; then
-            "$SDK/build-tools/35.0.0/aapt" dump badging reference/CarCheck-v1.1.apk || true
-          else
-            echo "aapt not available on this runner image"
-          fi
-          echo "=== Extracted source inventory ==="
-          unzip -l reference/CarCheck-jadx-sources.zip
+          python3 - <<'PY'
+          import zipfile, hashlib, os
+          for path in ["reference/CarCheck-v1.1.apk"]:
+              print("REFERENCE APK:", path, "bytes=", os.path.getsize(path))
+              print("SHA256:", hashlib.sha256(open(path,"rb").read()).hexdigest())
+              with zipfile.ZipFile(path) as z:
+                  for x in z.infolist():
+                      print(x.filename, "compression=", x.compress_type, "date=", x.date_time, "size=", x.file_size, "compressed=", x.compress_size)
+                  print("ZIP TEST:", z.testzip())
+          PY
+          echo "=== Reference badging ==="
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging reference/CarCheck-v1.1.apk || true
+          echo "=== Reference manifest ==="
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree reference/CarCheck-v1.1.apk AndroidManifest.xml || true
+      - name: Extract source inventory for comparison
+        run: |
+          set -euo pipefail
           mkdir -p build/carcheck-reference
           unzip -oq reference/CarCheck-jadx-sources.zip -d build/carcheck-reference
           for f in \
@@ -38,7 +44,6 @@ jobs:
             sources/com/carcheck/app/KeepAlive.java \
             resources/AndroidManifest.xml; do
             if [ -f "build/carcheck-reference/$f" ]; then
-              echo
               echo "===== $f ====="
               cat "build/carcheck-reference/$f"
             fi
